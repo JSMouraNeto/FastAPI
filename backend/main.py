@@ -1,13 +1,13 @@
 # main.py
 import os
 import tempfile
+from datetime import datetime
 from fastapi import FastAPI, Depends, File, UploadFile, HTTPException, Query
 from sqlmodel import Session, select, delete
 from sqlalchemy import create_engine as sqlalchemy_create_engine, text
 from sqlalchemy.orm import contains_eager
 from typing import List, Annotated, Dict, Optional
 
-# Importe os objetos e modelos necessários, incluindo os de resposta
 from database import engine, create_db_and_tables
 from models import Item, Metrica, ItemReadWithMetrics
 
@@ -55,10 +55,10 @@ def upload_and_process_database(
         with source_engine.connect() as source_connection:
             for table_name in ["processes1", "processes2", "processes3"]:
                 print(f"Lendo e consolidando dados da tabela '{table_name}'...")
-                query = text(f"SELECT PackageName, Uid, Pids, Metrics FROM {table_name}")
+                query = text(f"SELECT PackageName, Uid, Metrics FROM {table_name}")
                 
                 for row in source_connection.execute(query):
-                    final_items[row.PackageName] = {"package_name": row.PackageName, "uid": row.Uid, "pids": row.Pids}
+                    final_items[row.PackageName] = {"package_name": row.PackageName, "uid": row.Uid}
                     
                     metric_entries = row.Metrics.strip().split(';')
                     for entry in metric_entries:
@@ -67,10 +67,14 @@ def upload_and_process_database(
                         parts = entry.split(':')
                         if len(parts) == 6:
                             try:
+                                # Mantém o timestamp como a string original
                                 final_metrics[parts[0]] = {
-                                    "timestamp": parts[0], "usagetime": parts[1],
-                                    "delta_cpu_time": parts[2], "cpu_usage": float(parts[3]),
-                                    "rx_data": int(parts[4]), "tx_data": int(parts[5]),
+                                    "timestamp": parts[0],
+                                    "usagetime": parts[1],
+                                    "delta_cpu_time": parts[2],
+                                    "cpu_usage": float(parts[3]),
+                                    "rx_data": int(parts[4]),
+                                    "tx_data": int(parts[5]),
                                     "package_name": row.PackageName
                                 }
                             except (ValueError, IndexError):
@@ -113,13 +117,12 @@ def upload_and_process_database(
 @app.get("/process", response_model=Dict[str, List[ItemReadWithMetrics]])
 def get_process_data(
     session: Session = Depends(get_session),
+    # Descrições atualizadas para refletir o formato do timestamp original
     start: Optional[str] = Query(default=None, description="Timestamp inicial para o filtro (ex: 1750506177570)"),
     end: Optional[str] = Query(default=None, description="Timestamp final para o filtro (ex: 1750528388365)")
 ):
+    query = select(Item).limit(10)
 
-    query = select(Item)
-
-    # Se houver filtros de timestamp, junta a tabela de métricas e aplica os filtros.
     if start or end:
         query = query.join(Metrica)
         if start:
@@ -127,15 +130,8 @@ def get_process_data(
         if end:
             query = query.where(Metrica.timestamp <= end)
         
-        # Garante que a lista de métricas de cada item contenha apenas
-        # aquelas que passaram pelo filtro.
         query = query.options(contains_eager(Item.metricas))
     
-    # Limita o resultado final aos primeiros 10 itens.
-    query = query.limit(10)
-    
-    # '.unique()' previne que o mesmo Item apareça várias vezes se tiver
-    # múltiplas métricas que correspondam ao filtro de tempo.
     results = session.exec(query).unique().all()
     
     return {"processos": results}
