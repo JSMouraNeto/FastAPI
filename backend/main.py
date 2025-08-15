@@ -7,6 +7,7 @@ from sqlalchemy import create_engine as sqlalchemy_create_engine, text
 from sqlalchemy.orm import contains_eager
 from typing import List, Annotated, Dict, Optional
 
+# Importe os objetos e modelos necessários, incluindo os de resposta
 from database import engine, create_db_and_tables
 from models import Item, Metrica, ItemReadWithMetrics
 
@@ -115,19 +116,26 @@ def get_process_data(
     start: Optional[str] = Query(default=None, description="Timestamp inicial para o filtro (ex: 1750506177570)"),
     end: Optional[str] = Query(default=None, description="Timestamp final para o filtro (ex: 1750528388365)")
 ):
-    if not start and not end:
-        items = session.exec(select(Item)).all()
-        return {"processos": items}
 
-    query = select(Item).join(Metrica)
+    query = select(Item)
 
-    if start:
-        query = query.where(Metrica.timestamp >= start)
-    if end:
-        query = query.where(Metrica.timestamp <= end)
+    # Se houver filtros de timestamp, junta a tabela de métricas e aplica os filtros.
+    if start or end:
+        query = query.join(Metrica)
+        if start:
+            query = query.where(Metrica.timestamp >= start)
+        if end:
+            query = query.where(Metrica.timestamp <= end)
+        
+        # Garante que a lista de métricas de cada item contenha apenas
+        # aquelas que passaram pelo filtro.
+        query = query.options(contains_eager(Item.metricas))
     
-    query = query.options(contains_eager(Item.metricas))
+    # Limita o resultado final aos primeiros 10 itens.
+    query = query.limit(10)
     
+    # '.unique()' previne que o mesmo Item apareça várias vezes se tiver
+    # múltiplas métricas que correspondam ao filtro de tempo.
     results = session.exec(query).unique().all()
     
     return {"processos": results}
