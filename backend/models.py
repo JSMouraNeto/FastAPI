@@ -1,29 +1,48 @@
 # models.py
-from typing import Optional
-from sqlmodel import SQLModel, Field
+from typing import Optional, List
+from sqlmodel import SQLModel, Field, Relationship
+
+class Metrica(SQLModel, table=True):
+
+    timestamp: str = Field(index=True, primary_key=True)
+    usagetime: str
+    delta_cpu_time: str
+    cpu_usage: float
+    rx_data: int
+    tx_data: int
+   
+   
+    item_id: Optional[int] = Field(default=None, foreign_key="item.id")
+    # Propriedade de relacionamento para acessar o 'Item' pai a partir de uma 'Metrica'
+    item: Optional["Item"] = Relationship(back_populates="metricas")
 
 class Item(SQLModel, table=True):
-    """
-    Define a estrutura da tabela 'item' no banco de dados principal.
-    A chave primária agora é um ID numérico autoincrementado.
-    """
+   
     id: Optional[int] = Field(default=None, primary_key=True, index=True)
     package_name: str
     uid: int
+    pids: str  # Mantemos o pids como está
+   
+    
+    metricas: List["Metrica"] = Relationship(back_populates="item")
+
+
+class MetricaRead(SQLModel):
+   
+    timestamp: str
+    usagetime: str
+    delta_cpu_time: str
+    cpu_usage: float
+    rx_data: int
+    tx_data: int
+
+class ItemReadWithMetrics(SQLModel):
+
+    id: int
+    package_name: str
+    uid: int
     pids: str
-    metrics: str
+    metricas: List[MetricaRead] = []
 
-
-# class Item2(SQLModel, table=True):
-#     """
-#     Define a estrutura da tabela 'item' no banco de dados principal.
-#     A chave primária agora é um ID numérico autoincrementado.
-#     """
-#     timestamp: str = Field(default=None, primary_key=True, index=True)
-#     uid: str
-#     packagen_name = str
-#     usagetime = str
-#     delta_cpu_time = str
-#     cpu_usage = float
-#     rx_data = int
-#     tx_data = int
+Metrica.model_rebuild()
+Item.model_rebuild()
